@@ -2,6 +2,7 @@
 namespace Sandstorm\ConfigLoader;
 
 use Neos\Flow\Configuration\ConfigurationManager;
+use Neos\Utility\Arrays;
 use Neos\Utility\ObjectAccess;
 use Sandstorm\ConfigLoader\Source\SourceInterface;
 use Sandstorm\ConfigLoader\Transformation\TransformationInterface;
@@ -30,9 +31,6 @@ class ExternalConfigurationManager
         }
 
         $this->loadExternalConfiguration($externalConfigurationConfig);
-
-        var_dump($this->externalConfiguration);
-
         $this->applyExternalConfiguration($configurationManager);
     }
 
@@ -84,13 +82,32 @@ class ExternalConfigurationManager
      */
     protected function applyExternalConfiguration(ConfigurationManager $configurationManager): void
     {
-//        $settings = $configurationManager->getConfiguration(ConfigurationManager::CONFIGURATION_TYPE_SETTINGS);
-//
-//
-//        $configurations[ConfigurationManager::CONFIGURATION_TYPE_SETTINGS]['Neos']['Flow']['persistence']['backendOptions']['dbName'] = "bar";
-//        ObjectAccess::setProperty($configurationManager, 'unprocessedConfiguration', $configurations, true);
-//        $configurationManager->refreshConfiguration();
-//        $settings = $configurationManager->getConfiguration(ConfigurationManager::CONFIGURATION_TYPE_SETTINGS);
-//        var_dump($settings['Neos']['Flow']['persistence']['backendOptions']['dbName']);
+        $configurations = ObjectAccess::getProperty($configurationManager, 'configurations', true);
+        $configurations[ConfigurationManager::CONFIGURATION_TYPE_SETTINGS] = $this->processConfigurationLevel($configurations[ConfigurationManager::CONFIGURATION_TYPE_SETTINGS]);
+        ObjectAccess::setProperty($configurationManager, 'unprocessedConfiguration', $configurations, true);
+        $configurationManager->refreshConfiguration();
+    }
+
+    /**
+     * Recursively parses the config and replaces values.
+     *
+     * @param array $config
+     * @return array
+     */
+    protected function processConfigurationLevel(array $config)
+    {
+        foreach ($config as $key => $value) {
+            if (is_array($value)) {
+                $config[$key] = $this->processConfigurationLevel($value);
+            }
+            if (is_string($value)) {
+                $externalConfig = $this->externalConfiguration;
+                $config[$key] = preg_replace_callback('/%EXT:(.*)%/i', function ($matches) use ($externalConfig) {
+                    return Arrays::getValueByPath($externalConfig, $matches[1]);
+                }, $value);
+            }
+        }
+
+        return $config;
     }
 }
