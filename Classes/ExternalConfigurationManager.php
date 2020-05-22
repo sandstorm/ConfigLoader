@@ -64,8 +64,13 @@ class ExternalConfigurationManager
                     throw new Exception(sprintf("The class %s does not exist or does not implement TransformationInterface.", $transformationClass));
                 }
 
+                $transformationOptions = array_key_exists('transformationOptions', $externalConfigElement) ? $externalConfigElement['transformationOptions'] : null;
+
                 /** @var TransformationInterface $transformation */
                 $transformation = new $transformationClass();
+                if (is_array($transformationOptions)) {
+                    $transformation->setOptions($transformationOptions);
+                }
                 $configuration = $transformation->transform($configuration);
             }
 

@@ -13,4 +13,11 @@ interface TransformationInterface
      * @return mixed
      */
     public function transform($rawConfiguration);
+
+    /**
+     * Set transformation options
+     *
+     * @param array $options
+     */
+    public function setOptions(array $options): void;
 }
