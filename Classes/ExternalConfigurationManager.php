@@ -87,9 +87,21 @@ class ExternalConfigurationManager
      */
     protected function applyExternalConfiguration(ConfigurationManager $configurationManager): void
     {
-        $configurations = ObjectAccess::getProperty($configurationManager, 'configurations', true);
-        $configurations[ConfigurationManager::CONFIGURATION_TYPE_SETTINGS] = $this->processConfigurationLevel($configurations[ConfigurationManager::CONFIGURATION_TYPE_SETTINGS]);
-        ObjectAccess::setProperty($configurationManager, 'unprocessedConfiguration', $configurations, true);
+        // clear config cache to be able to load unprocessed configuration values such as env vars '%env:MY_ENV_VAR%%'
+        $configurationManager->flushConfigurationCache();
+
+        // load all available configuration (unprocessed)
+        $configurationManager->warmup();
+
+        // get unprocessed settings from configuration
+        $unprocessedSettings = $configurationManager->getConfiguration(ConfigurationManager::CONFIGURATION_TYPE_SETTINGS);
+
+        // replace external configuration values
+        $rawConfigurations = ObjectAccess::getProperty($configurationManager, 'configurations', true);
+        $rawConfigurations[ConfigurationManager::CONFIGURATION_TYPE_SETTINGS] = $this->processConfigurationLevel($unprocessedSettings);
+
+        // process configuration by ConfigurationManager
+        ObjectAccess::setProperty($configurationManager, 'unprocessedConfiguration', $rawConfigurations, true);
         $configurationManager->refreshConfiguration();
     }
 
