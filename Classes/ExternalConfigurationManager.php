@@ -9,6 +9,8 @@ use Sandstorm\ConfigLoader\Transformation\TransformationInterface;
 
 class ExternalConfigurationManager
 {
+    const EXTERNAL_CONFIGURATION_PATTERN = '/%EXT:(.*)%/i';
+
     protected $externalConfiguration = [];
 
     /**
@@ -19,8 +21,6 @@ class ExternalConfigurationManager
      */
     public function process(ConfigurationManager $configurationManager)
     {
-        // TODO: Make sure this runs only once on boot
-
         $externalConfigurationConfig = $configurationManager->getConfiguration(
             ConfigurationManager::CONFIGURATION_TYPE_SETTINGS,
             'Sandstorm.ConfigLoader.externalConfig');
@@ -30,8 +30,12 @@ class ExternalConfigurationManager
             return;
         }
 
-        $this->loadExternalConfiguration($externalConfigurationConfig);
-        $this->applyExternalConfiguration($configurationManager);
+        // only load and process external configuration if directive existent
+        $settings = $configurationManager->getConfiguration(ConfigurationManager::CONFIGURATION_TYPE_SETTINGS);
+        if ($this->hasExternalConfigurationDirective($settings)) {
+            $this->loadExternalConfiguration($externalConfigurationConfig);
+            $this->applyExternalConfiguration($configurationManager);
+        }
     }
 
     /**
@@ -111,7 +115,7 @@ class ExternalConfigurationManager
      * @param array $config
      * @return array
      */
-    protected function processConfigurationLevel(array $config)
+    protected function processConfigurationLevel(array $config): array
     {
         foreach ($config as $key => $value) {
             if (is_array($value)) {
@@ -119,12 +123,39 @@ class ExternalConfigurationManager
             }
             if (is_string($value)) {
                 $externalConfig = $this->externalConfiguration;
-                $config[$key] = preg_replace_callback('/%EXT:(.*)%/i', function ($matches) use ($externalConfig) {
+                $config[$key] = preg_replace_callback(self::EXTERNAL_CONFIGURATION_PATTERN, function ($matches) use ($externalConfig) {
                     return Arrays::getValueByPath($externalConfig, $matches[1]);
                 }, $value);
             }
         }
 
         return $config;
+    }
+
+    /**
+     * Recursively parses the config and check for configuration directive
+     *
+     * @param array $config
+     * @return bool
+     */
+    protected function hasExternalConfigurationDirective(array $config): bool
+    {
+        $hasDirective = false;
+        foreach ($config as $key => $value) {
+            if (is_array($value)) {
+                $hasDirective = $this->hasExternalConfigurationDirective($value);
+                if ($hasDirective) {
+                    break;
+                }
+            }
+            if (is_string($value)) {
+                $result = preg_match(self::EXTERNAL_CONFIGURATION_PATTERN, $value);
+                if ($result === 1) {
+                    break;
+                }
+            }
+        }
+
+        return $hasDirective;
     }
 }
