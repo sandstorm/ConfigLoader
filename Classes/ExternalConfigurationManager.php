@@ -150,7 +150,8 @@ class ExternalConfigurationManager
             }
             if (is_string($value)) {
                 $result = preg_match(self::EXTERNAL_CONFIGURATION_PATTERN, $value);
-                if ($result === 1) {
+                $hasDirective = $result === 1;
+                if ($hasDirective) {
                     break;
                 }
             }
