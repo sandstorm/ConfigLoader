@@ -13,4 +13,7 @@ class JsonTransformation implements TransformationInterface
         return json_decode($rawConfiguration, true);
     }
 
+    public function setOptions(array $options): void
+    {
+    }
 }

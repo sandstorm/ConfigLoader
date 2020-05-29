@@ -9,18 +9,19 @@ use Sandstorm\ConfigLoader\Transformation\TransformationInterface;
 
 class ExternalConfigurationManager
 {
+    const EXTERNAL_CONFIGURATION_PATTERN = '/%EXT:(.*)%/i';
+
     protected $externalConfiguration = [];
 
     /**
      * @param ConfigurationManager $configurationManager
+     * @param bool $force Force applying and refresh configuration
      * @return void
      * @throws \Neos\Flow\Configuration\Exception\InvalidConfigurationTypeException
      * @throws Exception
      */
-    public function process(ConfigurationManager $configurationManager)
+    public function process(ConfigurationManager $configurationManager, $force = false)
     {
-        // TODO: Make sure this runs only once on boot
-
         $externalConfigurationConfig = $configurationManager->getConfiguration(
             ConfigurationManager::CONFIGURATION_TYPE_SETTINGS,
             'Sandstorm.ConfigLoader.externalConfig');
@@ -30,8 +31,36 @@ class ExternalConfigurationManager
             return;
         }
 
-        $this->loadExternalConfiguration($externalConfigurationConfig);
-        $this->applyExternalConfiguration($configurationManager);
+        // only load and process external configuration if directive existent
+        $settings = $configurationManager->getConfiguration(ConfigurationManager::CONFIGURATION_TYPE_SETTINGS);
+        if ($this->hasExternalConfigurationDirective($settings) || $force) {
+            $this->loadExternalConfiguration($externalConfigurationConfig);
+            $this->applyExternalConfiguration($configurationManager);
+        }
+    }
+
+    /**
+     * @param ConfigurationManager $configurationManager
+     * @param string|null $configurationPath
+     * @return array|mixed|null
+     * @throws Exception
+     */
+    public function getExternalConfiguration(ConfigurationManager $configurationManager, string $configurationPath = null)
+    {
+        if (empty($this->externalConfiguration)) {
+            $externalConfigurationConfig = $configurationManager->getConfiguration(
+                ConfigurationManager::CONFIGURATION_TYPE_SETTINGS,
+                'Sandstorm.ConfigLoader.externalConfig');
+
+            $this->loadExternalConfiguration($externalConfigurationConfig);
+        }
+
+        $configuration = $this->externalConfiguration;
+        if ($configurationPath === null) {
+            return $configuration;
+        }
+
+        return (Arrays::getValueByPath($configuration, $configurationPath));
     }
 
     /**
@@ -64,8 +93,13 @@ class ExternalConfigurationManager
                     throw new Exception(sprintf("The class %s does not exist or does not implement TransformationInterface.", $transformationClass));
                 }
 
+                $transformationOptions = array_key_exists('transformationOptions', $externalConfigElement) ? $externalConfigElement['transformationOptions'] : null;
+
                 /** @var TransformationInterface $transformation */
                 $transformation = new $transformationClass();
+                if (is_array($transformationOptions)) {
+                    $transformation->setOptions($transformationOptions);
+                }
                 $configuration = $transformation->transform($configuration);
             }
 
@@ -82,9 +116,21 @@ class ExternalConfigurationManager
      */
     protected function applyExternalConfiguration(ConfigurationManager $configurationManager): void
     {
-        $configurations = ObjectAccess::getProperty($configurationManager, 'configurations', true);
-        $configurations[ConfigurationManager::CONFIGURATION_TYPE_SETTINGS] = $this->processConfigurationLevel($configurations[ConfigurationManager::CONFIGURATION_TYPE_SETTINGS]);
-        ObjectAccess::setProperty($configurationManager, 'unprocessedConfiguration', $configurations, true);
+        // clear config cache to be able to load unprocessed configuration values such as env vars '%env:MY_ENV_VAR%%'
+        $configurationManager->flushConfigurationCache();
+
+        // load all available configuration (unprocessed)
+        $configurationManager->warmup();
+
+        // get unprocessed settings from configuration
+        $unprocessedSettings = $configurationManager->getConfiguration(ConfigurationManager::CONFIGURATION_TYPE_SETTINGS);
+
+        // replace external configuration values
+        $rawConfigurations = ObjectAccess::getProperty($configurationManager, 'configurations', true);
+        $rawConfigurations[ConfigurationManager::CONFIGURATION_TYPE_SETTINGS] = $this->processConfigurationLevel($unprocessedSettings);
+
+        // process configuration by ConfigurationManager
+        ObjectAccess::setProperty($configurationManager, 'unprocessedConfiguration', $rawConfigurations, true);
         $configurationManager->refreshConfiguration();
     }
 
@@ -94,7 +140,7 @@ class ExternalConfigurationManager
      * @param array $config
      * @return array
      */
-    protected function processConfigurationLevel(array $config)
+    protected function processConfigurationLevel(array $config): array
     {
         foreach ($config as $key => $value) {
             if (is_array($value)) {
@@ -102,12 +148,40 @@ class ExternalConfigurationManager
             }
             if (is_string($value)) {
                 $externalConfig = $this->externalConfiguration;
-                $config[$key] = preg_replace_callback('/%EXT:(.*)%/i', function ($matches) use ($externalConfig) {
+                $config[$key] = preg_replace_callback(self::EXTERNAL_CONFIGURATION_PATTERN, function ($matches) use ($externalConfig) {
                     return Arrays::getValueByPath($externalConfig, $matches[1]);
                 }, $value);
             }
         }
 
         return $config;
+    }
+
+    /**
+     * Recursively parses the config and check for configuration directive
+     *
+     * @param array $config
+     * @return bool
+     */
+    protected function hasExternalConfigurationDirective(array $config): bool
+    {
+        $hasDirective = false;
+        foreach ($config as $key => $value) {
+            if (is_array($value)) {
+                $hasDirective = $this->hasExternalConfigurationDirective($value);
+                if ($hasDirective) {
+                    break;
+                }
+            }
+            if (is_string($value)) {
+                $result = preg_match(self::EXTERNAL_CONFIGURATION_PATTERN, $value);
+                $hasDirective = $result === 1;
+                if ($hasDirective) {
+                    break;
+                }
+            }
+        }
+
+        return $hasDirective;
     }
 }
