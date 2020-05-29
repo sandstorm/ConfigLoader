@@ -15,11 +15,12 @@ class ExternalConfigurationManager
 
     /**
      * @param ConfigurationManager $configurationManager
+     * @param bool $force Force applying and refresh configuration
      * @return void
      * @throws \Neos\Flow\Configuration\Exception\InvalidConfigurationTypeException
      * @throws Exception
      */
-    public function process(ConfigurationManager $configurationManager)
+    public function process(ConfigurationManager $configurationManager, $force = false)
     {
         $externalConfigurationConfig = $configurationManager->getConfiguration(
             ConfigurationManager::CONFIGURATION_TYPE_SETTINGS,
@@ -32,10 +33,34 @@ class ExternalConfigurationManager
 
         // only load and process external configuration if directive existent
         $settings = $configurationManager->getConfiguration(ConfigurationManager::CONFIGURATION_TYPE_SETTINGS);
-        if ($this->hasExternalConfigurationDirective($settings)) {
+        if ($this->hasExternalConfigurationDirective($settings) || $force) {
             $this->loadExternalConfiguration($externalConfigurationConfig);
             $this->applyExternalConfiguration($configurationManager);
         }
+    }
+
+    /**
+     * @param ConfigurationManager $configurationManager
+     * @param string|null $configurationPath
+     * @return array|mixed|null
+     * @throws Exception
+     */
+    public function getExternalConfiguration(ConfigurationManager $configurationManager, string $configurationPath = null)
+    {
+        if (empty($this->externalConfiguration)) {
+            $externalConfigurationConfig = $configurationManager->getConfiguration(
+                ConfigurationManager::CONFIGURATION_TYPE_SETTINGS,
+                'Sandstorm.ConfigLoader.externalConfig');
+
+            $this->loadExternalConfiguration($externalConfigurationConfig);
+        }
+
+        $configuration = $this->externalConfiguration;
+        if ($configurationPath === null) {
+            return $configuration;
+        }
+
+        return (Arrays::getValueByPath($configuration, $configurationPath));
     }
 
     /**
